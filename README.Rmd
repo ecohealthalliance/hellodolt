@@ -22,7 +22,7 @@ library(vroom)
 knitr::opts_chunk$set(error = FALSE)
 ```
 
-# Setting up a Dolt Database
+## Setting up a Dolt Database
 
 Install dolt from source. The latest source version is needed
 
@@ -50,7 +50,6 @@ unlink("doltdb", recursive = TRUE)
 unlink("flights.parquet")
 ```
 
-.
 ## Start a server and connect to it
 
 ```{r, eval = TRUE}
@@ -70,7 +69,7 @@ dolt_conn <- dbConnect(RMariaDB::MariaDB(), host = "127.0.0.1", port = 3333,
 
 # A Grossly Unfair Performance Comparison
 
-Comparing Dolt to DuckDB and using arrow to write Parquet files. In our use case,
+Comparing Dolt to DuckDB and using `arrow` to write Parquet files. In our use case,
 we might use the latter options and use S3 versioning to track those binary files. 
 
 ## Writing to the database
@@ -113,7 +112,7 @@ pq_write_time
 
 This isn't really a "fair" comparison, given the different goals of
 the projects, but the write time for Dolt is `r signif(dolt_write_time[3] / duck_write_time[3], 1)`
-time that of DuckDB, and `r signif(dolt_write_time[3] / pq_write_time[3], 1)` of
+times that of DuckDB, and `r signif(dolt_write_time[3] / pq_write_time[3], 1)` of
 writing to Parquet via arrow.  
 
 ## Read comparisons and dbplyr testing

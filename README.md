@@ -20,7 +20,7 @@ library(vroom)
 knitr::opts_chunk$set(error = FALSE)
 ```
 
-# Setting up a Dolt Database
+## Setting up a Dolt Database
 
 Install dolt from source. The latest source version is needed
 
@@ -41,7 +41,7 @@ exec_wait("~/go/bin/dolt", "version")
 
 <!-- Kill stuff from previous runs -->
 
-. ## Start a server and connect to it
+## Start a server and connect to it
 
 ``` r
 dir.create("doltdb", showWarnings = FALSE)
@@ -67,9 +67,9 @@ dolt_conn <- dbConnect(RMariaDB::MariaDB(), host = "127.0.0.1", port = 3333,
 
 # A Grossly Unfair Performance Comparison
 
-Comparing Dolt to DuckDB and using arrow to write Parquet files. In our
-use case, we might use the latter options and use S3 versioning to track
-those binary files.
+Comparing Dolt to DuckDB and using `arrow` to write Parquet files. In
+our use case, we might use the latter options and use S3 versioning to
+track those binary files.
 
 ## Writing to the database
 
@@ -100,7 +100,7 @@ dolt_write_time
 ```
 
     ##    user  system elapsed 
-    ##   6.830   0.163  62.205
+    ##   6.780   0.185  64.487
 
 DuckDB
 
@@ -113,7 +113,7 @@ duck_write_time
 ```
 
     ##    user  system elapsed 
-    ##   0.293   0.150   0.454
+    ##   0.349   0.201   0.584
 
 Parquet
 
@@ -125,11 +125,11 @@ pq_write_time
 ```
 
     ##    user  system elapsed 
-    ##   0.251   0.010   0.244
+    ##   0.265   0.016   0.267
 
 This isn’t really a “fair” comparison, given the different goals of the
-projects, but the write time for Dolt is 100 time that of DuckDB, and
-300 of writing to Parquet via arrow.
+projects, but the write time for Dolt is 100 times that of DuckDB, and
+200 of writing to Parquet via arrow.
 
 ## Read comparisons and dbplyr testing
 
@@ -142,7 +142,7 @@ dolt_read_time
 ```
 
     ##    user  system elapsed 
-    ##   0.999   2.151   5.336
+    ##   1.238   2.678   7.148
 
 ``` r
 duck_read_time <- system.time(
@@ -153,7 +153,7 @@ duck_read_time
 ```
 
     ##    user  system elapsed 
-    ##   0.073   0.028   0.101
+    ##   0.075   0.032   0.109
 
 ``` r
 pq_read_time <- system.time(
@@ -163,10 +163,10 @@ pq_read_time
 ```
 
     ##    user  system elapsed 
-    ##   0.178   0.049   0.112
+    ##   0.166   0.037   0.091
 
-For reading the whole table, Dolt read time is 50 times that of DuckDB,
-and 600 times that of reading parquet.
+For reading the whole table, Dolt read time is 70 times that of DuckDB,
+and 700 times that of reading parquet.
 
 Now let’s compare querying and reading a tiny value
 
@@ -195,8 +195,8 @@ query_benchmark
     ## # A tibble: 3 × 6
     ##   expression      min   median `itr/sec` mem_alloc `gc/sec`
     ##   <bch:expr> <bch:tm> <bch:tm>     <dbl> <bch:byt>    <dbl>
-    ## 1 dolt_query    1.79s    1.83s     0.547    2.35MB    0.137
-    ## 2 duck_query  37.39ms  37.89ms    26.0    144.71KB   11.1  
-    ## 3 pq_query    68.88ms  74.05ms    13.1      9.68MB    3.29
+    ## 1 dolt_query    1.86s    2.05s     0.492    2.35MB    0.123
+    ## 2 duck_query  37.18ms  37.89ms    26.4    144.71KB   11.3  
+    ## 3 pq_query     67.4ms  73.83ms    13.7      9.68MB    3.44
 
 <!-- Wrap up -->
