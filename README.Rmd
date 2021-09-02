@@ -1,0 +1,182 @@
+---
+title: "Hello, Dolt!"
+author: "Noam Ross"
+date: "9/1/2021"
+output: github_document
+---
+
+```{r packages, results = FALSE, message = FALSE}
+library(DBI)
+library(RMariaDB)
+library(duckdb)
+library(sys)
+library(nycflights13)
+library(withr)
+library(arrow)
+library(dplyr)
+library(dbplyr)
+library(bench)
+library(dbx)
+library(waldo)
+library(vroom)
+knitr::opts_chunk$set(error = FALSE)
+```
+
+# Setting up a Dolt Database
+
+Install dolt from source. The latest source version is needed
+
+```{bash eval = FALSE}
+git clone git@github.com:dolthub/dolt.git
+cd dolt/go && go install ./cmd/dolt ./cmd/git-dolt ./cmd/git-dolt-smudge
+```
+Check current version (shell)
+
+```{r, eval = TRUE}
+exec_wait("~/go/bin/dolt", "version")
+```
+
+<!-- Kill stuff from previous runs -->
+
+```{bash, eval=FALSE, include = FALSE}
+kill $(lsof -t -i:3333)
+```
+
+```{r, eval=TRUE, include = FALSE}
+unlink("doltdb", recursive = TRUE)
+unlink("duckdb")
+unlink("duckdb.wal")
+unlink("doltdb", recursive = TRUE)
+unlink("flights.parquet")
+```
+
+.
+## Start a server and connect to it
+
+```{r, eval = TRUE}
+dir.create("doltdb", showWarnings = FALSE)
+with_dir("doltdb", exec_wait("~/go/bin/dolt", "init"))
+dolt_server_pid <- with_dir("doltdb", sys::exec_background(
+  "~/go/bin/dolt", c("sql-server", "--port 3333", "--host 127.0.0.1",
+                     "--user user", "--password pwd", "--l error")
+))
+Sys.sleep(1) # Wait for server to fully start up before connecting
+```
+
+```{r}
+dolt_conn <- dbConnect(RMariaDB::MariaDB(), host = "127.0.0.1", port = 3333,
+                       username = "user", password = "pwd", dbname = "doltdb")
+```
+
+# A Grossly Unfair Performance Comparison
+
+Comparing Dolt to DuckDB and using arrow to write Parquet files. In our use case,
+we might use the latter options and use S3 versioning to track those binary files. 
+
+## Writing to the database
+
+Dolt
+
+```{r}
+flights <- nycflights13::flights
+dim(flights)
+print(object.size(flights), units = "Mb")
+
+# Using dbx::dbInsert here rather than dbWriteTable because it is much faster
+# to generate large INSERT statements than iterating through a parameterized
+# statement as dbBind does.
+dbCreateTable(dolt_conn, "flights", flights)
+dolt_write_time <- system.time(
+  dbxInsert(dolt_conn, "flights", flights)
+)
+dolt_write_time
+```
+
+DuckDB
+
+```{r}
+duck_conn <- dbConnect(duckdb::duckdb(), dbdir = "duckdb")
+duck_write_time <- system.time(
+  dbWriteTable(duck_conn, "flights", flights, overwrite = TRUE)
+)
+duck_write_time
+```
+
+Parquet
+
+```{r}
+pq_write_time <- system.time(
+  arrow::write_parquet(flights, "flights.parquet")
+)
+pq_write_time
+```
+
+This isn't really a "fair" comparison, given the different goals of
+the projects, but the write time for Dolt is `r signif(dolt_write_time[3] / duck_write_time[3], 1)`
+time that of DuckDB, and `r signif(dolt_write_time[3] / pq_write_time[3], 1)` of
+writing to Parquet via arrow.  
+
+## Read comparisons and dbplyr testing
+
+```{r}
+dolt_read_time <- system.time(
+  fl_dolt <- tbl(dolt_conn, "flights") |> 
+    collect()
+)
+dolt_read_time
+```
+
+```{r}
+duck_read_time <- system.time(
+  fl_duck <- tbl(duck_conn, "flights") |> 
+    collect()
+)
+duck_read_time
+```
+
+```{r}
+pq_read_time <- system.time(
+  fl_parquet  <- read_parquet("flights.parquet")
+)
+pq_read_time
+```
+
+For reading the whole table, Dolt read time is `r signif(dolt_read_time[3] / duck_read_time[3], 1)`
+times that of DuckDB, and `r signif(dolt_write_time[3] / pq_read_time[3], 1)` times
+that of reading parquet.
+
+Now let's compare querying and reading a tiny value
+
+```{r}
+query_benchmark <- bench::mark(
+  dolt_query = tbl(dolt_conn, "flights") |> 
+    filter(carrier == "MQ", dest == "DTW", month == 5, arr_delay < -10, day == 30 ) |> 
+    select(flight, tailnum) |> 
+    collect(),
+  
+  duck_query = tbl(duck_conn, "flights") |> 
+    filter(carrier == "MQ", dest == "DTW", month == 5, arr_delay < -10, day == 30 ) |> 
+    select(flight, tailnum) |> 
+    collect(),
+  
+  pq_query = arrow::open_dataset("flights.parquet") |> 
+    filter(carrier == "MQ", dest == "DTW", month == 5, arr_delay < -10, day == 30 ) |> 
+    select(flight, tailnum) |> 
+    collect(),
+  min_iterations = 10,
+  check = FALSE # data are returned in different order, so don't check they are identical
+)
+query_benchmark
+```
+
+<!-- Wrap up -->
+```{r, include = FALSE}
+dbDisconnect(dolt_conn)
+tools::pskill(dolt_server_pid)
+try(duckdb_shutdown(duckdb(dbdir = "duckdb")), silent = TRUE)
+unlink("duckdb")
+unlink("duckdb.wal")
+unlink("doltdb")
+unlink("flights.parquet")
+```
+
